@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickBar</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 16px;
+      background: transparent;
+      overflow: hidden;
+      -webkit-app-region: no-drag;
+      user-select: none;
+    }
+
+    .backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border-radius: 14px;
+    }
+
+    .container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      height: 52px;
+      padding: 0 20px;
+    }
+
+    .prompt-icon {
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 14px;
+      margin-right: 10px;
+      flex-shrink: 0;
+      transition: color 0.2s ease;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+
+    #quick-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #ffffff;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 16px;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      caret-color: #8b83ff;
+    }
+
+    #quick-input::placeholder {
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .status-toast {
+      position: absolute;
+      bottom: -32px;
+      left: 20px;
+      right: 20px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.3;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .status-toast.visible {
+      opacity: 1;
+    }
+
+    .status-toast.error {
+      background: rgba(220, 50, 50, 0.9);
+      color: #fff;
+    }
+
+    .status-toast.success {
+      background: rgba(50, 180, 100, 0.9);
+      color: #fff;
+    }
+
+    /* Focus state for icon */
+    .container:focus-within .prompt-icon {
+      color: rgba(139, 131, 255, 0.8);
+    }
+
+    /* Dark mode is the only mode — this is a floating overlay, always dark */
+  </style>
+</head>
+<body>
+  <div class="backdrop">
+    <div class="container">
+      <span class="prompt-icon">▸</span>
+      <div class="input-wrapper">
+        <input
+          type="text"
+          id="quick-input"
+          placeholder="Note or /do <command>…"
+          spellcheck="false"
+          autocomplete="off"
+          autofocus
+        />
+      </div>
+    </div>
+    <div class="status-toast" id="status-toast"></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

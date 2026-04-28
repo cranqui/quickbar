@@ -1,0 +1,16 @@
+{
+  "name": "quickbar",
+  "version": "1.0.0",
+  "description": "A global hotkey input bar for instant notes and Hermes agent commands",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "start-debug": "ELECTRON_ENABLE_LOGGING=1 electron ."
+  },
+  "author": "Cranqui",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "ws": "^8.20.0"
+  }
+}
