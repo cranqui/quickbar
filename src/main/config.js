@@ -60,10 +60,11 @@ function readHermesEnvKey() {
 function ensureDirs() {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    try { fs.chmodSync(CONFIG_DIR, 0o700); } catch (e) { /* non-fatal */ }
   }
-  try { fs.chmodSync(CONFIG_DIR, 0o700); } catch (e) { /* non-fatal */ }
   if (!fs.existsSync(NOTES_DIR)) {
     fs.mkdirSync(NOTES_DIR, { recursive: true });
+    try { fs.chmodSync(NOTES_DIR, 0o700); } catch (e) { /* non-fatal */ }
   }
   // Ensure config file exists — but use loadConfig to resolve .env fallback first
   if (!fs.existsSync(CONFIG_FILE)) {

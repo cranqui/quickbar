@@ -95,8 +95,7 @@ function showErrorNotification(message) {
   if (Notification.isSupported()) {
     new Notification({
       title: 'QuickBar',
-      body: message,
-      sound: 'default'
+      body: message
     }).show();
   }
 }
