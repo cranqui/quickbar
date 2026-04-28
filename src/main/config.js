@@ -39,6 +39,7 @@ function loadConfig() {
 function saveConfig(config) {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    try { fs.chmodSync(CONFIG_DIR, 0o700); } catch (e) { /* non-fatal */ }
   }
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
   // chmod 600 for security (API key lives here)
@@ -60,6 +61,7 @@ function ensureDirs() {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
   }
+  try { fs.chmodSync(CONFIG_DIR, 0o700); } catch (e) { /* non-fatal */ }
   if (!fs.existsSync(NOTES_DIR)) {
     fs.mkdirSync(NOTES_DIR, { recursive: true });
   }

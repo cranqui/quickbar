@@ -5,9 +5,7 @@ contextBridge.exposeInMainWorld('quickBarAPI', {
   dispatchCommand: (text) => ipcRenderer.invoke('dispatch-command', text),
   hideWindow: () => ipcRenderer.send('hide-window'),
   onClearInput: (callback) => {
+    ipcRenderer.removeAllListeners('clear-input');
     ipcRenderer.on('clear-input', () => callback());
-  },
-  onDispatchStatus: (callback) => {
-    ipcRenderer.on('dispatch-status', (_event, data) => callback(data));
   }
 });

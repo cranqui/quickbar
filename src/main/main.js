@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -6,6 +6,25 @@ const { loadConfig, ensureNotesDir, NOTES_DIR } = require('./config');
 
 let mainWindow = null;
 let config = null;
+
+// --- Note Helper ---
+
+function saveToNotes(text) {
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const timeStr = now.toISOString().replace('T', ' ').substring(0, 16);
+  const filePath = path.join(NOTES_DIR, `${dateStr}.txt`);
+  const line = `[${timeStr}] ${text}\n`;
+  try {
+    fs.appendFileSync(filePath, line, 'utf8');
+    return { ok: true };
+  } catch (e) {
+    console.error('[QuickBar] Failed to save note:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// --- Window ---
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -22,7 +41,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
-      sandbox: false,
+      sandbox: true,
       nodeIntegration: false
     }
   });
@@ -32,8 +51,7 @@ function createWindow() {
   // Center window horizontally, 30% from top
   mainWindow.once('ready-to-show', () => {
     positionWindow();
-    // Show on launch for initial testing — remove after verification
-    showWindow();
+    // Don't show on launch — only on hotkey
   });
 
   // Hide on blur (click outside)
@@ -71,38 +89,29 @@ function hideWindow() {
   mainWindow.hide();
 }
 
+// --- macOS Notification for async errors ---
+
+function showErrorNotification(message) {
+  if (Notification.isSupported()) {
+    new Notification({
+      title: 'QuickBar',
+      body: message,
+      sound: 'default'
+    }).show();
+  }
+}
+
 // --- IPC Handlers ---
 
 ipcMain.handle('save-note', async (event, text) => {
-  try {
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const timeStr = now.toISOString().replace('T', ' ').substring(0, 16); // YYYY-MM-DD HH:mm
-    const filePath = path.join(NOTES_DIR, `${dateStr}.txt`);
-    const line = `[${timeStr}] ${text}\n`;
-    fs.appendFileSync(filePath, line, 'utf8');
-    return { ok: true };
-  } catch (e) {
-    console.error('[QuickBar] Failed to save note:', e.message);
-    return { ok: false, error: e.message };
-  }
+  return saveToNotes(text);
 });
 
 ipcMain.handle('dispatch-command', async (event, text) => {
-  // First, save the command to notes (audit trail)
-  try {
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0];
-    const timeStr = now.toISOString().replace('T', ' ').substring(0, 16);
-    const filePath = path.join(NOTES_DIR, `${dateStr}.txt`);
-    const line = `[${timeStr}] ${text}\n`;
-    fs.appendFileSync(filePath, line, 'utf8');
-  } catch (e) {
-    // Note save failure is non-fatal — the dispatch is more important
-    console.error('[QuickBar] Failed to log command to notes:', e.message);
-  }
+  // Save command to notes (audit trail)
+  saveToNotes(text);
 
-  // POST to Hermes API (fire-and-forget, but check status)
+  // POST to Hermes API — fire-and-forget, but check HTTP status
   const command = text.replace(/^\/do\s+/i, '').trim();
   const body = JSON.stringify({
     model: 'hermes-agent',
@@ -112,7 +121,7 @@ ipcMain.handle('dispatch-command', async (event, text) => {
 
   try {
     const url = new URL(config.hermesApiUrl.replace(/\/$/, '') + '/chat/completions');
-    
+
     return new Promise((resolve) => {
       const req = http.request({
         hostname: url.hostname,
@@ -129,22 +138,14 @@ ipcMain.handle('dispatch-command', async (event, text) => {
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            // Success — Hermes will deliver to Telegram
             resolve({ ok: true });
           } else {
-            // Non-2xx: notify renderer
             let errorMsg = `Hermes returned HTTP ${res.statusCode}`;
             try {
               const parsed = JSON.parse(data);
               if (parsed.error?.message) errorMsg = parsed.error.message;
             } catch (_) {}
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('dispatch-status', {
-                ok: false,
-                status: res.statusCode,
-                message: errorMsg
-              });
-            }
+            showErrorNotification(errorMsg);
             resolve({ ok: false, error: errorMsg });
           }
         });
@@ -152,13 +153,7 @@ ipcMain.handle('dispatch-command', async (event, text) => {
 
       req.on('error', (e) => {
         const msg = `Hermes unreachable: ${e.message}`;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('dispatch-status', {
-            ok: false,
-            status: 0,
-            message: msg
-          });
-        }
+        showErrorNotification(msg);
         resolve({ ok: false, error: msg });
       });
 

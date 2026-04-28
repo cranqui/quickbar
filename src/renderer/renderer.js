@@ -1,6 +1,4 @@
 const input = document.getElementById('quick-input');
-const statusToast = document.getElementById('status-toast');
-let statusTimeout = null;
 
 // --- Input Handling ---
 
@@ -24,44 +22,21 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     e.preventDefault();
     input.value = '';
-    hideStatus();
     quickBarAPI.hideWindow();
   }
 });
 
-// --- IPC Listeners ---
+// --- IPC Listeners (attached once, no duplicates) ---
 
 quickBarAPI.onClearInput(() => {
   input.value = '';
-  hideStatus();
   // Focus after a tick — window might still be showing
   setTimeout(() => input.focus(), 50);
 });
 
-quickBarAPI.onDispatchStatus((data) => {
-  if (!data.ok) {
-    showStatus(data.message, 'error');
-  }
-});
-
-// --- Status Toast ---
-
-function showStatus(message, type = 'error') {
-  statusToast.textContent = message;
-  statusToast.className = `status-toast visible ${type}`;
-  if (statusTimeout) clearTimeout(statusTimeout);
-  statusTimeout = setTimeout(hideStatus, 2500);
-}
-
-function hideStatus() {
-  statusToast.className = 'status-toast';
-  if (statusTimeout) {
-    clearTimeout(statusTimeout);
-    statusTimeout = null;
-  }
-}
+// Note: dispatch errors are handled via macOS Notification from main process,
+// not inline toast (window is hidden by the time response arrives).
 
 // --- Init ---
 
-// Auto-focus on load
 input.focus();

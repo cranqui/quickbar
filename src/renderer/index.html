@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'">
   <title>QuickBar</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
-
     * {
       margin: 0;
       padding: 0;
@@ -14,7 +13,7 @@
     }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
       font-size: 16px;
       background: transparent;
       overflow: hidden;
@@ -61,7 +60,7 @@
       border: none;
       outline: none;
       color: #ffffff;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
       font-size: 16px;
       font-weight: 400;
       letter-spacing: -0.01em;
@@ -70,36 +69,6 @@
 
     #quick-input::placeholder {
       color: rgba(255, 255, 255, 0.35);
-    }
-
-    .status-toast {
-      position: absolute;
-      bottom: -32px;
-      left: 20px;
-      right: 20px;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 500;
-      line-height: 1.3;
-      opacity: 0;
-      transition: opacity 0.15s ease;
-      pointer-events: none;
-      z-index: 10;
-    }
-
-    .status-toast.visible {
-      opacity: 1;
-    }
-
-    .status-toast.error {
-      background: rgba(220, 50, 50, 0.9);
-      color: #fff;
-    }
-
-    .status-toast.success {
-      background: rgba(50, 180, 100, 0.9);
-      color: #fff;
     }
 
     /* Focus state for icon */
@@ -125,7 +94,6 @@
         />
       </div>
     </div>
-    <div class="status-toast" id="status-toast"></div>
   </div>
   <script src="renderer.js"></script>
 </body>
