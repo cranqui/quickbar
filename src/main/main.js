@@ -45,8 +45,9 @@ function createTray() {
     {
       label: 'Open Notes Folder',
       click: () => {
-        const result = shell.openPath(NOTES_DIR);
-        if (result && typeof result === 'string') console.error('[QuickBar] openPath error:', result);
+        shell.openPath(NOTES_DIR).then(errMsg => {
+          if (errMsg) console.error('[QuickBar] openPath error:', errMsg);
+        });
       }
     },
     { type: 'separator' },
