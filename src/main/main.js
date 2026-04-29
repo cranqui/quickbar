@@ -8,6 +8,7 @@ let mainWindow = null;
 let config = null;
 let tray = null;
 let isQuitting = false;
+let isContextMenuOpen = false;
 
 // --- Tray Icon (16x16 purple square, matches accent #8b83ff) ---
 
@@ -30,7 +31,7 @@ function createTray() {
   if (process.platform === 'darwin') tray.setIgnoreDoubleClick(true);
   tray.setToolTip('QuickBar');
 
-  // Left-click → toggle bar (same as hotkey)
+  // Left-click → toggle input bar
   tray.on('click', () => {
     if (mainWindow && mainWindow.isVisible()) {
       hideWindow();
@@ -39,11 +40,14 @@ function createTray() {
     }
   });
 
-  // Right-click → context menu
+  // Right-click → context menu (manual, not setContextMenu which swallows click)
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Open Notes Folder',
-      click: () => shell.openPath(NOTES_DIR)
+      click: () => {
+        const result = shell.openPath(NOTES_DIR);
+        if (result && typeof result === 'string') console.error('[QuickBar] openPath error:', result);
+      }
     },
     { type: 'separator' },
     {
@@ -54,7 +58,16 @@ function createTray() {
       }
     }
   ]);
-  tray.setContextMenu(contextMenu);
+
+  tray.on('right-click', () => {
+    isContextMenuOpen = true;
+    tray.popUpContextMenu(contextMenu);
+  });
+
+  contextMenu.on('menu-will-close', () => {
+    // Delay reset so blur handler doesn't fire before menu closes
+    setTimeout(() => { isContextMenuOpen = false; }, 100);
+  });
 }
 
 // --- Note Helper ---
@@ -104,9 +117,9 @@ function createWindow() {
     // Don't show on launch — only on hotkey
   });
 
-  // Hide on blur (click outside)
+  // Hide on blur (click outside) — but not when tray context menu steals focus
   mainWindow.on('blur', () => {
-    if (mainWindow.isVisible()) {
+    if (mainWindow.isVisible() && !isContextMenuOpen) {
       hideWindow();
     }
   });
