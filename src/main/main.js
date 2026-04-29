@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, Notification } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, Notification, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -6,6 +6,56 @@ const { loadConfig, ensureNotesDir, NOTES_DIR } = require('./config');
 
 let mainWindow = null;
 let config = null;
+let tray = null;
+let isQuitting = false;
+
+// --- Tray Icon (16x16 purple square, matches accent #8b83ff) ---
+
+function createTray() {
+  // Template icon: black circle on transparent. macOS auto-inverts for light/dark menu bar.
+  const iconPath = path.join(__dirname, '..', 'assets', 'tray-icon.png');
+  let trayIcon;
+  if (fs.existsSync(iconPath)) {
+    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  } else {
+    // Fallback: basic 16x16 icon from base64
+    const iconBase64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAU0lEQVR4nGNgGKygFIjPAPFPKD4DFSMIlKGK/+PAZ6BqcAJ8mpENwelsQpphGKt3iLEdryt+kmDAT5oYQLEXKA5EYl2BMxpBgOKEhOwdspIy/AQC8Z5ha7UPWCsAAAAASUVORK5CYII=';
+    trayIcon = nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`).resize({ width: 16, height: 16 });
+  }
+
+  // Mark as template for macOS — auto-inverts on light/dark menu bar
+  if (process.platform === 'darwin') trayIcon.setTemplateImage(true);
+
+  tray = new Tray(trayIcon);
+  if (process.platform === 'darwin') tray.setIgnoreDoubleClick(true);
+  tray.setToolTip('QuickBar');
+
+  // Left-click → toggle bar (same as hotkey)
+  tray.on('click', () => {
+    if (mainWindow && mainWindow.isVisible()) {
+      hideWindow();
+    } else {
+      showWindow();
+    }
+  });
+
+  // Right-click → context menu
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Notes Folder',
+      click: () => shell.openPath(NOTES_DIR)
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit QuickBar',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+  tray.setContextMenu(contextMenu);
+}
 
 // --- Note Helper ---
 
@@ -63,6 +113,13 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Prevent window close from hiding — unless app is quitting
+  mainWindow.on('close', (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    hideWindow();
   });
 }
 
@@ -171,9 +228,13 @@ ipcMain.on('hide-window', () => {
 // --- App Lifecycle ---
 
 app.whenReady().then(() => {
+  // Hide from dock — tray icon is the only presence
+  if (process.platform === 'darwin') app.dock.hide();
+
   config = loadConfig();
   ensureNotesDir();
   createWindow();
+  createTray();
 
   const registered = globalShortcut.register(config.hotkey, () => {
     if (mainWindow && mainWindow.isVisible()) {
@@ -187,6 +248,10 @@ app.whenReady().then(() => {
     console.error(`[QuickBar] Failed to register hotkey: ${config.hotkey}`);
     console.error('[QuickBar] Another app may be using it (e.g., Spotlight). Remap Spotlight in System Settings → Keyboard → Keyboard Shortcuts.');
   }
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('will-quit', () => {
