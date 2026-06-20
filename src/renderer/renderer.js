@@ -71,6 +71,11 @@ function parseQuickCurrency(text) {
   if (amountCode && QUICK_CRYPTO_CODES.includes(amountCode[2].toLowerCase())) {
     return { amount: amountCode[1].replace(/,/g, ''), from: amountCode[2], to: 'usd' };
   }
+  // Code to code without amount: "btc to eur" → 1 BTC to EUR
+  const codeToCode = text.match(/^([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
+  if (codeToCode && QUICK_CRYPTO_CODES.includes(codeToCode[1].toLowerCase()) && QUICK_CRYPTO_CODES.includes(codeToCode[2].toLowerCase())) {
+    return { amount: '1', from: codeToCode[1], to: codeToCode[2] };
+  }
   return null;
 }
 
