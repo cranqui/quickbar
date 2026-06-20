@@ -17,7 +17,10 @@ const BUILTIN_COMMANDS = [
   { id: 'win-left',   name: 'Left Half',     icon: '⬅', subtitle: 'Snap window to left',  type: 'command', action: 'left' },
   { id: 'win-right',  name: 'Right Half',    icon: '➡', subtitle: 'Snap window to right', type: 'command', action: 'right' },
   { id: 'win-full',    name: 'Full Screen',   icon: '⤢', subtitle: 'Maximize window',     type: 'command', action: 'full' },
+  { id: 'kill-proc',   name: 'Kill Process',  icon: '💀', subtitle: 'Select and kill a running process', type: 'command', action: 'kill' },
 ];
+
+let killProcessMode = false; // when true, results list shows running processes
 
 // Simple fuzzy match: checks if all chars of query appear in order in target
 function fuzzyMatch(query, target) {
@@ -164,6 +167,12 @@ input.addEventListener('input', () => {
 });
 
 function routeInput(text) {
+  // Kill process mode: typing filters process list
+  if (killProcessMode) {
+    showProcessList(text);
+    return;
+  }
+
   // 1. Currency conversion: "3600 cop to usd" (known currency codes only)
   if (isCurrencyConversion(text)) {
     const fx = parseCurrency(text);
@@ -283,15 +292,63 @@ async function executeSelected() {
   if (!item) return;
 
   if (item.type === 'command') {
+    if (item.action === 'kill') {
+      // Switch to process list mode
+      killProcessMode = true;
+      input.value = '';
+      input.placeholder = 'Select process to kill...';
+      await showProcessList();
+      return;
+    }
     await quickBarAPI.windowManage(item.action);
     input.value = '';
     clearResults();
     quickBarAPI.hideWindow();
+  } else if (item.type === 'process') {
+    // Kill the selected process
+    const result = await quickBarAPI.killProcess(item.pid);
+    if (result.ok) {
+      input.value = '';
+      input.placeholder = 'Search apps, calc, 3600 cop to usd, /ai, /do…';
+      killProcessMode = false;
+      clearResults();
+      quickBarAPI.hideWindow();
+    } else {
+      // Show error inline
+      renderInlineResult(`Error: ${result.error}`, 'error');
+    }
   } else if (item.type === 'app') {
     await quickBarAPI.launchApp(item.path);
     input.value = '';
     clearResults();
     quickBarAPI.hideWindow();
+  }
+}
+
+async function showProcessList(filter) {
+  try {
+    const procs = await quickBarAPI.listProcesses();
+    if (procs && procs.error) {
+      renderInlineResult(`Error: ${procs.error}`, 'error');
+      return;
+    }
+    let filtered = procs;
+    if (filter) {
+      filtered = procs.filter(p =>
+        fuzzyMatch(filter, p.name) || fuzzyMatch(filter, String(p.pid))
+      );
+    }
+    appResults = filtered.map(p => ({
+      ...p,
+      type: 'process',
+      name: p.name,
+      subtitle: `PID ${p.pid} · ${p.memory}`,
+      icon: '⚙',
+    }));
+    selectedIdx = appResults.length > 0 ? 0 : -1;
+    renderUnifiedResults(appResults);
+  } catch (e) {
+    renderInlineResult(`Error: ${e.message}`, 'error');
   }
 }
 
@@ -393,6 +450,10 @@ function clearResults() {
   currentMode = 'apps';
   calcResult = null;
   fxResult = null;
+  if (killProcessMode) {
+    killProcessMode = false;
+    input.placeholder = 'Search apps, calc, 3600 cop to usd, /ai, /do…';
+  }
   resultsContainer.innerHTML = '';
   resultsContainer.style.display = 'none';
   updateWindowHeight(0);

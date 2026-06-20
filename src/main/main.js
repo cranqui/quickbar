@@ -591,6 +591,67 @@ function recordLaunch(appPath) {
 
 loadLaunchStats();
 
+// --- Kill Process IPC ---
+
+function getRunningProcesses() {
+  const { execFileSync } = require('child_process');
+  // ps output: PID, %CPU, RSS, comm (app name)
+  const output = execFileSync('ps', ['-eo', 'pid=,rss=,comm='], { encoding: 'utf8', timeout: 2000 });
+  const procs = [];
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Split: pid (digits), rss (digits), rest is comm
+    const m = trimmed.match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const pid = parseInt(m[1]);
+    const rssKB = parseInt(m[2]);
+    const comm = m[3].trim();
+    // Skip kernel processes (PID 0) and our own Electron processes
+    if (pid === 0) continue;
+    if (comm.includes('QuickBar') || comm.includes('Electron Helper')) continue;
+    // Show app name — take last path component
+    const name = comm.split('/').pop();
+    procs.push({
+      pid,
+      name,
+      comm,
+      memory: rssKB > 1024 ? `${(rssKB / 1024).toFixed(0)} MB` : `${rssKB} KB`,
+    });
+  }
+  return procs;
+}
+
+ipcMain.handle('list-processes', async () => {
+  try {
+    const procs = getRunningProcesses();
+    // Sort by memory desc — most resource-hungry first
+    procs.sort((a, b) => {
+      const aMB = parseInt(a.memory);
+      const bMB = parseInt(b.memory);
+      return bMB - aMB;
+    });
+    return procs.slice(0, 30); // top 30
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
+ipcMain.handle('kill-process', async (event, pid) => {
+  try {
+    process.kill(pid, 'SIGTERM');
+    return { ok: true };
+  } catch (e) {
+    // Try SIGKILL if SIGTERM fails (permission or already dead)
+    try {
+      process.kill(pid, 'SIGKILL');
+      return { ok: true };
+    } catch (e2) {
+      return { ok: false, error: e2.message };
+    }
+  }
+});
+
 // --- Hermes AI Command IPC ---
 
 ipcMain.handle('dispatch-command', async (event, text) => {

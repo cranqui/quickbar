@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('quickBarAPI', {
   windowManage: (action) => ipcRenderer.invoke('window-manage', action),
   convertCurrency: (amount, from, to) => ipcRenderer.invoke('convert-currency', amount, from, to),
   convertUnit: (text) => ipcRenderer.invoke('convert-unit', text),
+  listProcesses: () => ipcRenderer.invoke('list-processes'),
+  killProcess: (pid) => ipcRenderer.invoke('kill-process', pid),
   hideWindow: () => ipcRenderer.send('hide-window'),
   onClearInput: (callback) => {
     ipcRenderer.removeAllListeners('clear-input');
