@@ -68,7 +68,7 @@ function createWindow() {
     skipTaskbar: true, hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
-      contextIsolation: true, sandbox: true, nodeIntegration: false,
+      contextIsolation: true, sandbox: false, nodeIntegration: false,
     },
   });
 
