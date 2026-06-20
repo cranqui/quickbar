@@ -162,9 +162,8 @@ function createWindow() {
   });
 
   // Hide on blur (click outside) — but not when tray context menu steals focus
-  // or during the 300ms grace period after show (macOS focus race)
   mainWindow.on('blur', () => {
-    if (mainWindow.isVisible() && !isContextMenuOpen && Date.now() > blurGuardUntil) {
+    if (mainWindow.isVisible() && !isContextMenuOpen) {
       hideWindow();
     }
   });
@@ -191,18 +190,10 @@ function positionWindow() {
   mainWindow.setPosition(x, y);
 }
 
-let blurGuardUntil = 0;
-
 function showWindow() {
   if (!mainWindow) return;
   positionWindow();
   try { mainWindow.webContents.send('clear-input'); } catch (_) {}
-  // Guard: ignore blur events for 300ms after show (macOS focus race)
-  blurGuardUntil = Date.now() + 300;
-  // On macOS with dock hidden, the process is a background agent and won't
-  // receive focus via show()/focus() alone — app.focus({ steal: true }) is
-  // required to bring the window in front of the currently active app.
-  if (process.platform === 'darwin') app.focus({ steal: true });
   mainWindow.show();
   mainWindow.focus();
 }
@@ -735,8 +726,10 @@ ipcMain.on('hide-window', () => {
 // --- App Lifecycle ---
 
 app.whenReady().then(() => {
-  // Hide from dock — tray icon is the only presence
-  if (process.platform === 'darwin') app.dock.hide();
+  // Accessory mode: no dock icon, no menu bar, but windows can receive
+  // keyboard focus normally. This is the proper macOS API for menubar apps
+  // (replaces app.dock.hide() which breaks window activation).
+  if (process.platform === 'darwin') app.setActivationPolicy('accessory');
 
   config = loadConfig();
   ensureNotesDir();
