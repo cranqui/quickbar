@@ -7,6 +7,7 @@ let searchDebounce = null;
 let currentMode = 'apps'; // 'apps', 'calc', 'currency', 'commands'
 let calcResult = null;
 let fxResult = null;
+let unitResult = null;
 
 const BASE_WINDOW_HEIGHT = 84; // fixed input (52) + statusbar (32) + 12px margin
 const RESULT_HEIGHT = 44; // per result item
@@ -59,21 +60,21 @@ function parseCurrency(text) {
 }
 
 // Quick crypto/fiat lookup: "btc", "0.5 btc", "2 eth"
-const QUICK_CRYPTO_CODES = ['btc','eth','sol','usdt','usdc','bnb','xrp','ada','doge','dot','matic','avax','link','ltc','bch','uni','atom','xlm','icp','fil','cop','usd','eur','gbp','jpy','cad','aud','chf','cny','mxn','brl','ars','clp','pen'];
 function parseQuickCurrency(text) {
+  const codes = quickBarAPI.currencyCodes || [];
   // Just a currency code: "btc" → 1 BTC to USD
   const codeOnly = text.match(/^([a-zA-Z]{3})$/i);
-  if (codeOnly && QUICK_CRYPTO_CODES.includes(codeOnly[1].toLowerCase())) {
+  if (codeOnly && codes.includes(codeOnly[1].toLowerCase())) {
     return { amount: '1', from: codeOnly[1], to: 'usd' };
   }
   // Amount + code: "0.5 btc" → 0.5 BTC to USD
   const amountCode = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})$/i);
-  if (amountCode && QUICK_CRYPTO_CODES.includes(amountCode[2].toLowerCase())) {
+  if (amountCode && codes.includes(amountCode[2].toLowerCase())) {
     return { amount: amountCode[1].replace(/,/g, ''), from: amountCode[2], to: 'usd' };
   }
   // Code to code without amount: "btc to eur" → 1 BTC to EUR
   const codeToCode = text.match(/^([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
-  if (codeToCode && QUICK_CRYPTO_CODES.includes(codeToCode[1].toLowerCase()) && QUICK_CRYPTO_CODES.includes(codeToCode[2].toLowerCase())) {
+  if (codeToCode && codes.includes(codeToCode[1].toLowerCase()) && codes.includes(codeToCode[2].toLowerCase())) {
     return { amount: '1', from: codeToCode[1], to: codeToCode[2] };
   }
   return null;
@@ -84,17 +85,14 @@ function isUnitConversion(text) {
   return /^[\d.,]+\s+[a-zA-Z/]+\s+(to|in|as)\s+[a-zA-Z/]+$/i.test(text);
 }
 
-// Distinguish unit from currency: currencies are 3-letter codes (cop, usd, eur)
-// units include non-3-letter codes (km, lb, f, gb, etc.) or units in same category
+// Distinguish unit from currency: uses shared currency code list from constants
 function isCurrencyConversion(text) {
   const m = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
   if (!m) return false;
-  const knownCurrencies = ['cop','usd','eur','gbp','jpy','cad','aud','chf','cny','mxn','brl','ars','clp','pen'];
-  const knownCrypto = ['btc','eth','sol','usdt','usdc','bnb','xrp','ada','doge','dot','matic','avax','link','ltc','bch','uni','atom','xlm','icp','fil'];
-  const allCurrencies = [...knownCurrencies, ...knownCrypto];
+  const codes = quickBarAPI.currencyCodes || [];
   const from = m[2].toLowerCase();
   const to = m[3].toLowerCase();
-  return allCurrencies.includes(from) && allCurrencies.includes(to);
+  return codes.includes(from) && codes.includes(to);
 }
 
 // --- Input Handling ---
@@ -152,6 +150,11 @@ input.addEventListener('keydown', (e) => {
       quickBarAPI.hideWindow();
     } else if (currentMode === 'currency' && fxResult && fxResult.ok) {
       copyToClipboard(String(fxResult.result));
+      input.value = '';
+      clearResults();
+      quickBarAPI.hideWindow();
+    } else if (currentMode === 'unit' && unitResult && unitResult.ok) {
+      copyToClipboard(String(unitResult.result));
       input.value = '';
       clearResults();
       quickBarAPI.hideWindow();
@@ -222,7 +225,7 @@ function routeInput(text) {
 
   // 2. Unit conversion: "10 km in miles", "72 f to c", "1 tb to gb"
   if (isUnitConversion(text)) {
-    currentMode = 'currency'; // reuse currency display mode
+    currentMode = 'unit';
     doUnitConversion(text);
     return;
   }
@@ -501,6 +504,7 @@ function formatCurrency(amount, currency) {
 async function doUnitConversion(text) {
   try {
     const result = await quickBarAPI.convertUnit(text);
+    unitResult = result;
     if (result && result.ok) {
       renderInlineResult(result.label, 'unit');
     } else {
@@ -555,6 +559,7 @@ function clearResults() {
   currentMode = 'apps';
   calcResult = null;
   fxResult = null;
+  unitResult = null;
   if (killProcessMode) {
     killProcessMode = false;
     input.placeholder = 'Search apps, calc, 3600 cop to usd, /ai, /do…';
@@ -572,6 +577,14 @@ function updateWindowHeight(resultCount) {
 // --- Clipboard ---
 
 function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
   const textarea = document.createElement('textarea');
   textarea.value = text;
   textarea.style.position = 'fixed';

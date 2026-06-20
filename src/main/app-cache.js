@@ -66,6 +66,7 @@ async function getCachedApps() {
 function refreshInBackground() {
   if (refreshPromise) return refreshPromise;
 
+  // Set promise immediately to prevent concurrent calls
   refreshPromise = (async () => {
     try {
       const apps = await getInstalledApps();

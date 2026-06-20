@@ -103,15 +103,13 @@ function resolveIconPath(appPath, iconName) {
  * Build the full app list with metadata.
  */
 async function getInstalledApps() {
-  let appPaths = await queryMdfind();
-
-  if (!appPaths || appPaths.length === 0) {
-    appPaths = scanAppDirectories();
-  }
-
-  // Merge with directory scan to catch any apps Spotlight missed
+  let mdfindPaths = await queryMdfind();
   const dirApps = scanAppDirectories();
-  const allPaths = [...new Set([...appPaths, ...dirApps])];
+
+  // Use mdfind results if available, merge with dir scan to catch any Spotlight missed
+  const allPaths = mdfindPaths && mdfindPaths.length > 0
+    ? [...new Set([...mdfindPaths, ...dirApps])]
+    : dirApps;
 
   // Filter out helpers, updaters, internal bundles, and dev Electron instances
   const filtered = allPaths.filter(p => {

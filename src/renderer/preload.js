@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { ALL_CURRENCY_CODES_LOWER } = require('../main/constants');
 
 contextBridge.exposeInMainWorld('quickBarAPI', {
   saveNote: (text) => ipcRenderer.invoke('save-note', text),
@@ -18,5 +19,6 @@ contextBridge.exposeInMainWorld('quickBarAPI', {
   onClearInput: (callback) => {
     ipcRenderer.removeAllListeners('clear-input');
     ipcRenderer.on('clear-input', () => callback());
-  }
+  },
+  currencyCodes: ALL_CURRENCY_CODES_LOWER,
 });
