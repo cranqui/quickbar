@@ -393,6 +393,59 @@ ipcMain.handle('window-manage', async (event, action) => {
 const FX_CACHE = { rates: null, timestamp: 0 };
 const FX_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// Crypto rates via CoinGecko (free, no API key)
+const CRYPTO_CACHE = { rates: null, timestamp: 0 };
+const CRYPTO_CACHE_TTL = 5 * 60 * 1000; // 5 minutes (crypto is volatile)
+
+// Known crypto codes
+const CRYPTO_CODES = ['btc', 'eth', 'sol', 'usdt', 'usdc', 'bnb', 'xrp', 'ada', 'doge', 'dot', 'matic', 'avax', 'link', 'ltc', 'bch', 'uni', 'atom', 'xlm', 'icp', 'fil'];
+const CRYPTO_ID_MAP = {
+  BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', USDT: 'tether', USDC: 'usd-coin',
+  BNB: 'binancecoin', XRP: 'ripple', ADA: 'cardano', DOGE: 'dogecoin', DOT: 'polkadot',
+  MATIC: 'matic-network', AVAX: 'avalanche-2', LINK: 'chainlink', LTC: 'litecoin',
+  BCH: 'bitcoin-cash', UNI: 'uniswap', ATOM: 'cosmos', XLM: 'stellar', ICP: 'internet-computer',
+  FIL: 'filecoin',
+};
+
+async function getCryptoRates() {
+  if (CRYPTO_CACHE.rates && Date.now() - CRYPTO_CACHE.timestamp < CRYPTO_CACHE_TTL) {
+    return CRYPTO_CACHE.rates;
+  }
+
+  return new Promise((resolve) => {
+    const ids = Object.values(CRYPTO_ID_MAP).join(',');
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          // Build rates relative to USD (same format as fiat rates)
+          const rates = {};
+          for (const [symbol, id] of Object.entries(CRYPTO_ID_MAP)) {
+            if (parsed[id] && parsed[id].usd) {
+              rates[symbol] = parsed[id].usd;
+            }
+          }
+          CRYPTO_CACHE.rates = rates;
+          CRYPTO_CACHE.timestamp = Date.now();
+          resolve(rates);
+        } catch {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+// Check if a code is a known currency (fiat or crypto)
+function isKnownCurrency(code) {
+  const upper = code.toUpperCase();
+  const fiatCodes = ['COP','USD','EUR','GBP','JPY','CAD','AUD','CHF','CNY','MXN','BRL','ARS','CLP','PEN'];
+  return fiatCodes.includes(upper) || CRYPTO_CODES.includes(code.toLowerCase());
+}
+
 async function getFxRates() {
   if (FX_CACHE.rates && Date.now() - FX_CACHE.timestamp < FX_CACHE_TTL) {
     return FX_CACHE.rates;
@@ -430,13 +483,47 @@ ipcMain.handle('convert-currency', async (event, amount, fromCur, toCur) => {
   const amt = parseFloat(amount);
   if (isNaN(amt)) return { ok: false, error: 'Invalid amount' };
 
-  const rates = await getFxRates();
+  const fromIsCrypto = CRYPTO_CODES.includes(from.toLowerCase());
+  const toIsCrypto = CRYPTO_CODES.includes(to.toLowerCase());
+
+  let rates;
+  if (fromIsCrypto || toIsCrypto) {
+    // Crypto conversion — fetch crypto rates (USD-denominated)
+    const cryptoRates = await getCryptoRates();
+    if (!cryptoRates) return { ok: false, error: 'Crypto API unreachable' };
+
+    // If both are crypto: convert via USD
+    if (fromIsCrypto && toIsCrypto) {
+      // amount in USD = amount * rate[from], then / rate[to]
+      const usdAmount = amt * cryptoRates[from];
+      const result = usdAmount / cryptoRates[to];
+      return { ok: true, result: Math.round(result * 100) / 100, from, to, amount: amt };
+    }
+
+    // Crypto → fiat or fiat → crypto
+    const fiatRates = await getFxRates();
+    if (!fiatRates) return { ok: false, error: 'FX API unreachable' };
+
+    if (fromIsCrypto) {
+      // crypto → fiat: amount_in_usd = amount * cryptoRate[from], then * fiatRate[to]
+      const usdAmount = amt * cryptoRates[from];
+      const result = usdAmount * fiatRates[to];
+      return { ok: true, result: Math.round(result * 100) / 100, from, to, amount: amt };
+    } else {
+      // fiat → crypto: amount_in_usd = amount / fiatRate[from], then / cryptoRate[to]
+      const usdAmount = amt / fiatRates[from];
+      const result = usdAmount / cryptoRates[to];
+      return { ok: true, result: Math.round(result * 1e8) / 1e8, from, to, amount: amt };
+    }
+  }
+
+  // Pure fiat conversion
+  rates = await getFxRates();
   if (!rates) return { ok: false, error: 'FX API unreachable' };
 
   if (!rates[from]) return { ok: false, error: `Unknown currency: ${from}` };
   if (!rates[to]) return { ok: false, error: `Unknown currency: ${to}` };
 
-  // Rates are relative to USD: amount_in_usd = amount / rate[from], then rate[to] * amount_in_usd
   const usdAmount = amt / rates[from];
   const result = usdAmount * rates[to];
 

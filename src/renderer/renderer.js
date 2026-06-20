@@ -68,11 +68,12 @@ function isUnitConversion(text) {
 function isCurrencyConversion(text) {
   const m = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
   if (!m) return false;
-  // If both are known unit codes and not standard currency, treat as unit
   const knownCurrencies = ['cop','usd','eur','gbp','jpy','cad','aud','chf','cny','mxn','brl','ars','clp','pen'];
+  const knownCrypto = ['btc','eth','sol','usdt','usdc','bnb','xrp','ada','doge','dot','matic','avax','link','ltc','bch','uni','atom','xlm','icp','fil'];
+  const allCurrencies = [...knownCurrencies, ...knownCrypto];
   const from = m[2].toLowerCase();
   const to = m[3].toLowerCase();
-  return knownCurrencies.includes(from) && knownCurrencies.includes(to);
+  return allCurrencies.includes(from) && allCurrencies.includes(to);
 }
 
 // --- Input Handling ---
