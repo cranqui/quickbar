@@ -1,8 +1,10 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, Notification, Tray, Menu, nativeImage, shell } = require('electron');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
-const { loadConfig, ensureNotesDir, NOTES_DIR } = require('./config');
+const { loadConfig, ensureNotesDir, NOTES_DIR, readHermesEnvTelegram } = require('./config');
+const os = require('os');
 
 let mainWindow = null;
 let config = null;
@@ -10,25 +12,21 @@ let tray = null;
 let isQuitting = false;
 let isContextMenuOpen = false;
 
-// --- Tray Icon (16x16 purple square, matches accent #8b83ff) ---
+// --- Tray Icon ---
 
 function createTray() {
-  // Template icon: black circle on transparent. macOS auto-inverts for light/dark menu bar.
-  const iconPath = path.join(__dirname, '..', 'assets', 'tray-icon.png');
+  // Idle: solid circle (template image — macOS auto-inverts for menu bar)
+  const idlePath = path.join(__dirname, '..', 'assets', 'tray-icon-idle.png');
   let trayIcon;
-  if (fs.existsSync(iconPath)) {
-    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  if (fs.existsSync(idlePath)) {
+    trayIcon = nativeImage.createFromPath(idlePath).resize({ width: 16, height: 16 });
   } else {
-    // Fallback: basic 16x16 icon from base64
     const iconBase64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAU0lEQVR4nGNgGKygFIjPAPFPKD4DFSMIlKGK/+PAZ6BqcAJ8mpENwelsQpphGKt3iLEdryt+kmDAT5oYQLEXKA5EYl2BMxpBgOKEhOwdspIy/AQC8Z5ha7UPWCsAAAAASUVORK5CYII=';
     trayIcon = nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`).resize({ width: 16, height: 16 });
   }
-
-  // Mark as template for macOS — auto-inverts on light/dark menu bar
   if (process.platform === 'darwin') trayIcon.setTemplateImage(true);
 
   tray = new Tray(trayIcon);
-  if (process.platform === 'darwin') tray.setIgnoreDoubleClick(true);
   tray.setToolTip('QuickBar');
 
   // Left-click → toggle input bar
@@ -88,12 +86,54 @@ function saveToNotes(text) {
   }
 }
 
+// --- Doer Inbox Helper (writes directly to Doer's SQLite DB) ---
+
+const DOER_DB = path.join(os.homedir(), 'Library', 'Application Support', 'doer', 'tasks.db');
+
+function addToDoerInbox(text) {
+  const task = text.replace(/^\/do\s+/i, '').trim();
+  if (!task) return { ok: false, error: 'Empty task' };
+
+  const now = Date.now();
+  const id = now.toString(36) + Math.random().toString(36).slice(2, 7);
+
+  try {
+    const Database = require('better-sqlite3');
+    const dbPath = DOER_DB;
+
+    if (!fs.existsSync(dbPath)) {
+      return { ok: false, error: 'Doer database not found. Open Doer app first.' };
+    }
+
+    const db = new Database(dbPath, { readonly: false, fileMustExist: true });
+    db.pragma('journal_mode = WAL');
+    db.prepare(`
+      INSERT INTO tasks (id, name, notes, bucket, cat, pri, status, createdAt, completedAt, delegatedTo, dueDate, tags, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, task, '', 'inbox', 'personal', 'normal', 'active', now, null, null, null, '', now);
+    db.close();
+  } catch (err) {
+    console.error('Doer DB write failed:', err.message);
+    return { ok: false, error: `DB error: ${err.message}` };
+  }
+
+  // Also log as note
+  saveToNotes(text);
+
+  // Notify
+  if (Notification.isSupported()) {
+    new Notification({ title: 'Doer', body: `Added to inbox: ${task}` }).show();
+  }
+
+  return { ok: true };
+}
+
 // --- Window ---
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 52,
+    width: 640,
+    height: 104,  // 6px inset top+bottom + 58px input row + 32px status bar + 2px border = ~100, +4 headroom
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -101,7 +141,7 @@ function createWindow() {
     resizable: false,
     movable: false,
     skipTaskbar: true,
-    hasShadow: false,
+    hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
@@ -142,7 +182,7 @@ function positionWindow() {
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-  const x = Math.round((screenWidth - 600) / 2);
+  const x = Math.round((screenWidth - 640) / 2);
   const y = Math.round(screenHeight * 0.3);
   mainWindow.setPosition(x, y);
 }
@@ -150,7 +190,11 @@ function positionWindow() {
 function showWindow() {
   if (!mainWindow) return;
   positionWindow();
-  mainWindow.webContents.send('clear-input');
+  try { mainWindow.webContents.send('clear-input'); } catch (_) {}
+  // On macOS with dock hidden, the process is a background agent and won't
+  // receive focus via show()/focus() alone — app.focus({ steal: true }) is
+  // required to bring the window in front of the currently active app.
+  if (process.platform === 'darwin') app.focus({ steal: true });
   mainWindow.show();
   mainWindow.focus();
 }
@@ -160,15 +204,41 @@ function hideWindow() {
   mainWindow.hide();
 }
 
-// --- macOS Notification for async errors ---
+// --- Notifications ---
 
 function showErrorNotification(message) {
   if (Notification.isSupported()) {
-    new Notification({
-      title: 'QuickBar',
-      body: message
-    }).show();
+    new Notification({ title: 'QuickBar Error', body: String(message) }).show();
   }
+}
+
+// --- Telegram Delivery ---
+
+function sendToTelegram(text) {
+  const { botToken, chatId } = readHermesEnvTelegram();
+  if (!botToken || !chatId) {
+    console.error('[QuickBar] Telegram credentials not found in .env');
+    return;
+  }
+  const message = `⚡ *QuickBar*\n${text}`;
+  const body = JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'Markdown' });
+  const req = https.request({
+    hostname: 'api.telegram.org',
+    path: `/bot${botToken}/sendMessage`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+  }, (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        console.error('[QuickBar] Telegram send failed:', res.statusCode, data);
+      }
+    });
+  });
+  req.on('error', (e) => console.error('[QuickBar] Telegram send error:', e.message));
+  req.write(body);
+  req.end();
 }
 
 // --- IPC Handlers ---
@@ -177,15 +247,21 @@ ipcMain.handle('save-note', async (event, text) => {
   return saveToNotes(text);
 });
 
+ipcMain.handle('add-to-doer', async (event, text) => {
+  return addToDoerInbox(text);
+});
+
 ipcMain.handle('dispatch-command', async (event, text) => {
   // Save command to notes (audit trail)
   saveToNotes(text);
 
-  // POST to Hermes API — fire-and-forget, but check HTTP status
-  const command = text.replace(/^\/do\s+/i, '').trim();
+  // POST to Hermes API — parse response, deliver via Telegram + Notification
+  const command = text.replace(/^\/ai\s+/i, '').trim();
   const body = JSON.stringify({
     model: 'hermes-agent',
-    messages: [{ role: 'user', content: command }],
+    messages: [
+      { role: 'user', content: command }
+    ],
     stream: false
   });
 
@@ -208,6 +284,15 @@ ipcMain.handle('dispatch-command', async (event, text) => {
         res.on('data', (chunk) => data += chunk);
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
+            // Extract reply text from API response
+            let reply = '';
+            try {
+              const parsed = JSON.parse(data);
+              reply = parsed.choices?.[0]?.message?.content?.trim() || '';
+            } catch (_) {}
+            if (reply) {
+              sendToTelegram(reply);
+            }
             resolve({ ok: true });
           } else {
             let errorMsg = `Hermes returned HTTP ${res.statusCode}`;

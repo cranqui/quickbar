@@ -14,44 +14,46 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-      font-size: 16px;
       background: transparent;
       overflow: hidden;
       -webkit-app-region: no-drag;
       user-select: none;
     }
 
+    /* Inset 6px on all sides so the macOS shadow is visible around the card */
     .backdrop {
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(30px);
-      -webkit-backdrop-filter: blur(30px);
+      top: 6px;
+      left: 6px;
+      right: 6px;
+      bottom: 6px;
+      background: #ffffff;
       border-radius: 14px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* clips .container background to rounded corners */
     }
 
+    /* Input area — slightly darker than the hints bar, Raycast style */
     .container {
-      position: relative;
       display: flex;
       align-items: center;
-      height: 52px;
-      padding: 0 20px;
+      flex: 1;
+      padding: 0 18px;
+      gap: 12px;
+      background: #F0EFED;
     }
 
     .prompt-icon {
-      color: rgba(255, 255, 255, 0.4);
-      font-size: 14px;
-      margin-right: 10px;
+      color: #DA7756;
+      font-size: 30px;
       flex-shrink: 0;
-      transition: color 0.2s ease;
+      transition: color 0.15s ease;
     }
 
     .input-wrapper {
       flex: 1;
-      position: relative;
     }
 
     #quick-input {
@@ -59,24 +61,70 @@
       background: transparent;
       border: none;
       outline: none;
-      color: #ffffff;
+      color: #3a3a3a;
       font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 400;
       letter-spacing: -0.01em;
-      caret-color: #8b83ff;
+      caret-color: #DA7756;
     }
 
     #quick-input::placeholder {
-      color: rgba(255, 255, 255, 0.35);
+      color: rgba(0, 0, 0, 0.28);
     }
 
-    /* Focus state for icon */
-    .container:focus-within .prompt-icon {
-      color: rgba(139, 131, 255, 0.8);
+    /* Hints bar — white, as-is */
+    .statusbar {
+      height: 32px;
+      background: #ffffff;
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      gap: 16px;
     }
 
-    /* Dark mode is the only mode — this is a floating overlay, always dark */
+    .statusbar-hint {
+      font-size: 13px;
+      font-weight: 500;
+      color: #3a3a3a;
+      letter-spacing: 0.01em;
+    }
+
+    .statusbar-hint kbd {
+      font-family: inherit;
+      background: rgba(0, 0, 0, 0.07);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 13px;
+    }
+
+    /* Dark mode */
+    @media (prefers-color-scheme: dark) {
+      .backdrop {
+        background: #1e1e1e;
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+      .container {
+        background: #2a2a2a;
+      }
+      #quick-input {
+        color: #e0e0e0;
+      }
+      #quick-input::placeholder {
+        color: rgba(255, 255, 255, 0.28);
+      }
+      .statusbar {
+        background: #1e1e1e;
+        border-top-color: rgba(255, 255, 255, 0.06);
+      }
+      .statusbar-hint {
+        color: #e0e0e0;
+      }
+      .statusbar-hint kbd {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
   </style>
 </head>
 <body>
@@ -87,12 +135,18 @@
         <input
           type="text"
           id="quick-input"
-          placeholder="Note or /do <command>…"
+          placeholder="Note, /ai <command>, or /do <task>…"
           spellcheck="false"
           autocomplete="off"
           autofocus
         />
       </div>
+    </div>
+    <div class="statusbar">
+      <span class="statusbar-hint"><kbd>↵</kbd> save note</span>
+      <span class="statusbar-hint"><kbd>/ai</kbd> command</span>
+      <span class="statusbar-hint"><kbd>/do</kbd> task</span>
+      <span class="statusbar-hint"><kbd>esc</kbd> dismiss</span>
     </div>
   </div>
   <script src="renderer.js"></script>

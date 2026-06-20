@@ -10,13 +10,19 @@ input.addEventListener('keydown', (e) => {
       quickBarAPI.hideWindow();
       return;
     }
-    if (text.toLowerCase().startsWith('/do ')) {
+    if (text.toLowerCase().startsWith('/ai ')) {
       quickBarAPI.dispatchCommand(text);
+      input.value = '';
+      quickBarAPI.hideWindow();
+    } else if (text.toLowerCase().startsWith('/do ')) {
+      quickBarAPI.addToDoer(text);
+      input.value = '';
+      // Keep window open for chaining tasks
     } else {
       quickBarAPI.saveNote(text);
+      input.value = '';
+      quickBarAPI.hideWindow();
     }
-    input.value = '';
-    quickBarAPI.hideWindow();
   }
 
   if (e.key === 'Escape') {

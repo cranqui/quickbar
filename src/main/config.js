@@ -57,6 +57,21 @@ function readHermesEnvKey() {
   }
 }
 
+function readHermesEnvTelegram() {
+  if (!fs.existsSync(HERMES_ENV_FILE)) return { botToken: '', chatId: '' };
+  try {
+    const raw = fs.readFileSync(HERMES_ENV_FILE, 'utf8');
+    const tokenMatch = raw.match(/^TELEGRAM_BOT_TOKEN=(.+)$/m);
+    const chatMatch = raw.match(/^TELEGRAM_HOME_CHANNEL=(.+)$/m);
+    return {
+      botToken: tokenMatch ? tokenMatch[1].trim() : '',
+      chatId: chatMatch ? chatMatch[1].trim() : ''
+    };
+  } catch (e) {
+    return { botToken: '', chatId: '' };
+  }
+}
+
 function ensureDirs() {
   if (!fs.existsSync(CONFIG_DIR)) {
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -73,4 +88,4 @@ function ensureDirs() {
   }
 }
 
-module.exports = { loadConfig, saveConfig, ensureNotesDir: ensureDirs, NOTES_DIR, CONFIG_DIR, CONFIG_FILE, HERMES_ENV_FILE };
+module.exports = { loadConfig, saveConfig, ensureNotesDir: ensureDirs, NOTES_DIR, CONFIG_DIR, CONFIG_FILE, HERMES_ENV_FILE, readHermesEnvTelegram };
