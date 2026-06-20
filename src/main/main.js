@@ -344,36 +344,35 @@ function runAppleScript(script) {
 }
 
 ipcMain.handle('window-manage', async (event, action) => {
-  // Get frontmost app window and snap it
-  const scripts = {
-    left: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {0, 0}
-tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
-    right: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, 0}
-tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
-    full: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {0, 0}
-tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")), (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
-  };
 
-  // Simpler, more reliable approach: use keyboard shortcuts via macOS
-  // Rectangle/Raycast use: Ctrl+Opt+Left/Right/Enter
-  // But we don't have Rectangle guaranteed. Use AppleScript with screen bounds.
+  // Use Electron's screen API for correct logical (not native) resolution.
+  // system_profiler reports native resolution (2x on retina), causing oversized windows.
+  const { screen } = require('electron');
+  const display = screen.getPrimaryDisplay();
+  const area = display.workArea;
+  const W = Math.round(area.width);
+  const H = Math.round(area.height);
+  const X = Math.round(area.x);
+  const Y = Math.round(area.y);
+
+  let pos, size;
+  if (action === 'left') {
+    pos = `${X}, ${Y}`;
+    size = `${Math.round(W / 2)}, ${H}`;
+  } else if (action === 'right') {
+    pos = `${X + Math.round(W / 2)}, ${Y}`;
+    size = `${Math.round(W / 2)}, ${H}`;
+  } else {
+    pos = `${X}, ${Y}`;
+    size = `${W}, ${H}`;
+  }
+
   const script = `
     tell application "System Events"
       set p to first process whose frontmost is true
       set w to first window of p
-      set screenW to do shell script "system_profiler SPDisplaysDataType | awk '/Resolution/{print $2; exit}'"
-      set screenH to do shell script "system_profiler SPDisplaysDataType | awk '/Resolution/{print $4; exit}'"
-      set screenW to screenW as integer
-      set screenH to screenH as integer
-      ${action === 'left' ? `
-      set position of w to {0, 0}
-      set size of w to {screenW / 2, screenH}` : ''}
-      ${action === 'right' ? `
-      set position of w to {screenW / 2, 0}
-      set size of w to {screenW / 2, screenH}` : ''}
-      ${action === 'full' ? `
-      set position of w to {0, 0}
-      set size of w to {screenW, screenH}` : ''}
+      set position of w to {${pos}}
+      set size of w to {${size}}
     end tell`;
 
   return runAppleScript(script);
