@@ -415,7 +415,9 @@ async function getCryptoRates() {
   return new Promise((resolve) => {
     const ids = Object.values(CRYPTO_ID_MAP).join(',');
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
-    https.get(url, (res) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'QuickBar/1.0 (macOS launcher)' }
+    }, (res) => {
       let data = '';
       res.on('data', (chunk) => data += chunk);
       res.on('end', () => {
