@@ -162,8 +162,9 @@ function createWindow() {
   });
 
   // Hide on blur (click outside) — but not when tray context menu steals focus
+  // or during the 300ms grace period after show (macOS focus race)
   mainWindow.on('blur', () => {
-    if (mainWindow.isVisible() && !isContextMenuOpen) {
+    if (mainWindow.isVisible() && !isContextMenuOpen && Date.now() > blurGuardUntil) {
       hideWindow();
     }
   });
@@ -190,10 +191,14 @@ function positionWindow() {
   mainWindow.setPosition(x, y);
 }
 
+let blurGuardUntil = 0;
+
 function showWindow() {
   if (!mainWindow) return;
   positionWindow();
   try { mainWindow.webContents.send('clear-input'); } catch (_) {}
+  // Guard: ignore blur events for 300ms after show (macOS focus race)
+  blurGuardUntil = Date.now() + 300;
   // On macOS with dock hidden, the process is a background agent and won't
   // receive focus via show()/focus() alone — app.focus({ steal: true }) is
   // required to bring the window in front of the currently active app.
