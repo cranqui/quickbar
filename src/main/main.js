@@ -283,9 +283,9 @@ ipcMain.handle('search-apps', async (event, query) => {
   }));
 });
 
-ipcMain.handle('get-app-icon', async (event, iconPath) => {
-  if (!iconPath) return null;
-  return getIconDataURL(iconPath);
+ipcMain.handle('get-app-icon', async (event, appPath) => {
+  if (!appPath) return null;
+  return getIconDataURL(appPath);
 });
 
 ipcMain.handle('launch-app', async (event, appPath) => {
