@@ -167,7 +167,14 @@ input.addEventListener('input', () => {
 });
 
 function routeInput(text) {
-  // Kill process mode: typing filters process list
+  // Kill process by name: "kill notion", "kill chrome"
+  const killMatch = text.match(/^kill\s+(.+)$/i);
+  if (killMatch) {
+    doKillByName(killMatch[1].trim());
+    return;
+  }
+
+  // Kill process mode: typing filters process list (from two-step flow)
   if (killProcessMode) {
     showProcessList(text);
     return;
@@ -352,6 +359,52 @@ async function showProcessList(filter) {
   }
 }
 
+async function doKillByName(name) {
+  try {
+    const procs = await quickBarAPI.listProcesses();
+    if (procs && procs.error) {
+      renderInlineResult(`Error: ${procs.error}`, 'error');
+      return;
+    }
+
+    // Match by name (case-insensitive contains)
+    const matches = procs.filter(p =>
+      p.name.toLowerCase().includes(name.toLowerCase())
+    );
+
+    if (matches.length === 0) {
+      renderInlineResult(`No process found for "${name}"`, 'error');
+    } else if (matches.length === 1) {
+      // Single match — kill directly
+      const result = await quickBarAPI.killProcess(matches[0].pid);
+      if (result.ok) {
+        renderInlineResult(`Killed ${matches[0].name} (PID ${matches[0].pid})`, 'kill');
+        setTimeout(() => {
+          input.value = '';
+          clearResults();
+          quickBarAPI.hideWindow();
+        }, 800);
+      } else {
+        renderInlineResult(`Error: ${result.error}`, 'error');
+      }
+    } else {
+      // Multiple matches — show as selectable list
+      killProcessMode = true;
+      appResults = matches.map(p => ({
+        ...p,
+        type: 'process',
+        name: p.name,
+        subtitle: `PID ${p.pid} · ${p.memory}`,
+        icon: '⚙',
+      }));
+      selectedIdx = 0;
+      renderUnifiedResults(appResults);
+    }
+  } catch (e) {
+    renderInlineResult(`Error: ${e.message}`, 'error');
+  }
+}
+
 // --- Calculator ---
 
 async function doCalc(expr) {
@@ -416,7 +469,7 @@ function renderInlineResult(text, type) {
   item.className = 'result-item selected';
   const icon = document.createElement('span');
   icon.className = 'inline-result-icon';
-  icon.textContent = type === 'currency' ? '💱' : type === 'unit' ? '📏' : type === 'error' ? '⚠' : '=';
+  icon.textContent = type === 'currency' ? '💱' : type === 'unit' ? '📏' : type === 'error' ? '⚠' : type === 'kill' ? '💀' : '=';
   const span = document.createElement('span');
   span.className = 'result-name';
   span.style.fontFamily = '"SF Mono", Menlo, monospace';
