@@ -304,6 +304,140 @@ ipcMain.handle('resize-window', async (event, height) => {
   mainWindow.setBounds({ width, height: Math.round(height) });
 });
 
+// --- Calculator IPC ---
+
+// Safe math evaluator — no eval(), only numbers and operators
+function evalMath(expr) {
+  // Allow only digits, operators, parentheses, decimal points, spaces
+  const cleaned = expr.replace(/\s+/g, '').replace(/[^0-9+\-*/().%]/g, '');
+  if (!cleaned || !cleaned.match(/^[0-9+\-*/().%]+$/)) return null;
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = Function('"use strict"; return (' + cleaned + ')')();
+    if (typeof result === 'number' && isFinite(result)) {
+      // Round to avoid floating point noise
+      return Math.round(result * 1e10) / 1e10;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('calc', async (event, expr) => {
+  return evalMath(expr);
+});
+
+// --- Window Management IPC ---
+
+function runAppleScript(script) {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    execFile('osascript', ['-e', script], { timeout: 3000 }, (err, stdout, stderr) => {
+      if (err) {
+        resolve({ ok: false, error: stderr || err.message });
+      } else {
+        resolve({ ok: true, output: stdout.trim() });
+      }
+    });
+  });
+}
+
+ipcMain.handle('window-manage', async (event, action) => {
+  // Get frontmost app window and snap it
+  const scripts = {
+    left: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {0, 0}
+tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
+    right: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, 0}
+tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")) / 2, (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
+    full: `tell application "System Events" to set position of (first window of (first process whose frontmost is true)) to {0, 0}
+tell application "System Events" to set size of (first window of (first process whose frontmost is true)) to {(word 3 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution")), (word 4 of (do shell script "system_profiler SPDisplaysDataType | grep Resolution"))}`,
+  };
+
+  // Simpler, more reliable approach: use keyboard shortcuts via macOS
+  // Rectangle/Raycast use: Ctrl+Opt+Left/Right/Enter
+  // But we don't have Rectangle guaranteed. Use AppleScript with screen bounds.
+  const script = `
+    tell application "System Events"
+      set p to first process whose frontmost is true
+      set w to first window of p
+      set screenW to do shell script "system_profiler SPDisplaysDataType | awk '/Resolution/{print $2; exit}'"
+      set screenH to do shell script "system_profiler SPDisplaysDataType | awk '/Resolution/{print $4; exit}'"
+      set screenW to screenW as integer
+      set screenH to screenH as integer
+      ${action === 'left' ? `
+      set position of w to {0, 0}
+      set size of w to {screenW / 2, screenH}` : ''}
+      ${action === 'right' ? `
+      set position of w to {screenW / 2, 0}
+      set size of w to {screenW / 2, screenH}` : ''}
+      ${action === 'full' ? `
+      set position of w to {0, 0}
+      set size of w to {screenW, screenH}` : ''}
+    end tell`;
+
+  return runAppleScript(script);
+});
+
+// --- Currency Conversion IPC ---
+
+const FX_CACHE = { rates: null, timestamp: 0 };
+const FX_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+async function getFxRates() {
+  if (FX_CACHE.rates && Date.now() - FX_CACHE.timestamp < FX_CACHE_TTL) {
+    return FX_CACHE.rates;
+  }
+
+  return new Promise((resolve) => {
+    const url = 'https://api.exchangerate-api.com/v4/latest/USD';
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          FX_CACHE.rates = parsed.rates;
+          FX_CACHE.timestamp = Date.now();
+          resolve(parsed.rates);
+        } catch {
+          resolve(null);
+        }
+      });
+    }).on('error', () => resolve(null));
+  });
+}
+
+// Currency code aliases
+const FX_ALIASES = {
+  cop: 'COP', usd: 'USD', eur: 'EUR', gbp: 'GBP', jpy: 'JPY',
+  cad: 'CAD', aud: 'AUD', chf: 'CHF', cny: 'CNY', mxn: 'MXN',
+  brl: 'BRL', ars: 'ARS', clp: 'CLP', pen: 'PEN', cop: 'COP',
+};
+
+ipcMain.handle('convert-currency', async (event, amount, fromCur, toCur) => {
+  const from = (fromCur || '').toUpperCase();
+  const to = (toCur || '').toUpperCase();
+  const amt = parseFloat(amount);
+  if (isNaN(amt)) return { ok: false, error: 'Invalid amount' };
+
+  const rates = await getFxRates();
+  if (!rates) return { ok: false, error: 'FX API unreachable' };
+
+  if (!rates[from]) return { ok: false, error: `Unknown currency: ${from}` };
+  if (!rates[to]) return { ok: false, error: `Unknown currency: ${to}` };
+
+  // Rates are relative to USD: amount_in_usd = amount / rate[from], then rate[to] * amount_in_usd
+  const usdAmount = amt / rates[from];
+  const result = usdAmount * rates[to];
+
+  return {
+    ok: true,
+    result: Math.round(result * 100) / 100,
+    from, to, amount: amt,
+  };
+});
+
 ipcMain.handle('dispatch-command', async (event, text) => {
   // Save command to notes (audit trail)
   saveToNotes(text);

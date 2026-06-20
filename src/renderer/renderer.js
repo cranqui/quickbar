@@ -5,15 +5,44 @@ let appResults = [];
 let selectedIdx = -1;
 let searchDebounce = null;
 let isAppSearchMode = false;
+let currentMode = 'apps'; // 'apps', 'calc', 'currency', 'window'
+let calcResult = null;
+let fxResult = null;
 
 const BASE_WINDOW_HEIGHT = 104; // input + statusbar
 const RESULT_HEIGHT = 44; // per result item
+
+// --- Pattern Detectors ---
+
+// Math expression: starts with digit or ( and contains operators
+function isMathExpression(text) {
+  if (!text) return false;
+  // Must start with digit, decimal, or opening paren
+  if (!/^[0-9(.\s]/.test(text)) return false;
+  // Must contain at least one operator
+  if (!/[+\-*/%]/.test(text)) return false;
+  // Must end with digit or closing paren
+  if (!/[0-9)%\s]$/.test(text)) return false;
+  return true;
+}
+
+// Currency conversion: "3600 cop to usd" or "100 usd to eur"
+function parseCurrency(text) {
+  const m = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
+  if (!m) return null;
+  return { amount: m[1].replace(/,/g, ''), from: m[2], to: m[3] };
+}
+
+// Window management: "/left", "/right", "/full"
+function isWindowCommand(text) {
+  return /^(left|right|full)$/i.test(text.trim());
+}
 
 // --- Input Handling ---
 
 input.addEventListener('keydown', (e) => {
   // Handle arrow keys for app results navigation
-  if (appResults.length > 0) {
+  if (appResults.length > 0 && currentMode === 'apps') {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       selectedIdx = Math.min(selectedIdx + 1, appResults.length - 1);
@@ -35,9 +64,7 @@ input.addEventListener('keydown', (e) => {
     }
     if (e.key === 'Tab' && selectedIdx >= 0 && isAppSearchMode) {
       e.preventDefault();
-      // Tab completion — fill input with app name
       input.value = appResults[selectedIdx].name;
-      // Clear results, let user confirm with Enter
       return;
     }
   }
@@ -57,8 +84,26 @@ input.addEventListener('keydown', (e) => {
     } else if (text.toLowerCase().startsWith('/do ')) {
       quickBarAPI.addToDoer(text);
       input.value = '';
-      // Keep window open for chaining tasks
       clearResults();
+    } else if (currentMode === 'calc' && calcResult !== null) {
+      // Copy calc result to clipboard
+      copyToClipboard(String(calcResult));
+      input.value = '';
+      clearResults();
+      quickBarAPI.hideWindow();
+    } else if (currentMode === 'currency' && fxResult && fxResult.ok) {
+      copyToClipboard(String(fxResult.result));
+      input.value = '';
+      clearResults();
+      quickBarAPI.hideWindow();
+    } else if (currentMode === 'window') {
+      const action = text.trim().toLowerCase();
+      if (['left', 'right', 'full'].includes(action)) {
+        quickBarAPI.windowManage(action);
+        input.value = '';
+        clearResults();
+        quickBarAPI.hideWindow();
+      }
     } else {
       // Not a slash command → check if an app is selected
       if (isAppSearchMode && selectedIdx >= 0 && appResults[selectedIdx]) {
@@ -80,25 +125,129 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-// --- App Search ---
+// --- Input Router ---
 
 input.addEventListener('input', () => {
   const text = input.value.trim();
 
-  // If slash command, don't show app results
+  // Slash commands
   if (text.toLowerCase().startsWith('/ai ') || text.toLowerCase().startsWith('/do ')) {
     clearResults();
     return;
   }
 
-  // App search mode — any non-slash input triggers app search
-  isAppSearchMode = true;
-
   clearTimeout(searchDebounce);
   searchDebounce = setTimeout(() => {
-    searchApps(text);
-  }, 30); // 30ms — feels instant
+    routeInput(text);
+  }, 30);
 });
+
+function routeInput(text) {
+  // 1. Window management: "left", "right", "full"
+  if (isWindowCommand(text)) {
+    currentMode = 'window';
+    renderWindowResult(text.trim().toLowerCase());
+    return;
+  }
+
+  // 2. Currency conversion: "3600 cop to usd"
+  const fx = parseCurrency(text);
+  if (fx) {
+    currentMode = 'currency';
+    doCurrencyConversion(fx);
+    return;
+  }
+
+  // 3. Calculator: math expression
+  if (isMathExpression(text)) {
+    currentMode = 'calc';
+    doCalc(text);
+    return;
+  }
+
+  // 4. Default: app search
+  currentMode = 'apps';
+  isAppSearchMode = true;
+  searchApps(text);
+}
+
+// --- Calculator ---
+
+async function doCalc(expr) {
+  try {
+    const result = await quickBarAPI.calc(expr);
+    calcResult = result;
+    if (result !== null) {
+      renderInlineResult(`= ${result}`, 'calc');
+    } else {
+      clearResults();
+    }
+  } catch (e) {
+    clearResults();
+  }
+}
+
+// --- Currency Conversion ---
+
+async function doCurrencyConversion(fx) {
+  try {
+    const result = await quickBarAPI.convertCurrency(fx.amount, fx.from, fx.to);
+    fxResult = result;
+    if (result.ok) {
+      const formatted = formatCurrency(result.result, result.to);
+      renderInlineResult(`${fx.amount} ${result.from} = ${formatted}`, 'currency');
+    } else {
+      renderInlineResult(`Error: ${result.error}`, 'error');
+    }
+  } catch (e) {
+    renderInlineResult(`Error: ${e.message}`, 'error');
+  }
+}
+
+function formatCurrency(amount, currency) {
+  // Simple formatting — enough for display
+  const parts = amount.toFixed(2).split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${intPart}.${parts[1]} ${currency}`;
+}
+
+// --- Window Management ---
+
+function renderWindowResult(action) {
+  const labels = { left: '← Left Half', right: 'Right Half →', full: '⤢ Full Screen' };
+  resultsContainer.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'result-item selected';
+  item.innerHTML = `<span class="result-name" style="font-size: 15px;">${labels[action] || action}</span>`;
+  resultsContainer.appendChild(item);
+  resultsContainer.style.display = 'block';
+  updateWindowHeight(1);
+}
+
+// --- Inline Result (calculator / currency) ---
+
+function renderInlineResult(text, type) {
+  appResults = [];
+  selectedIdx = -1;
+  isAppSearchMode = false;
+  resultsContainer.innerHTML = '';
+  const item = document.createElement('div');
+  item.className = 'result-item selected';
+  const icon = document.createElement('span');
+  icon.className = 'inline-result-icon';
+  icon.textContent = type === 'currency' ? '💱' : type === 'error' ? '⚠' : '=';
+  const span = document.createElement('span');
+  span.className = 'result-name';
+  span.style.fontFamily = '"SF Mono", Menlo, monospace';
+  span.textContent = text;
+  item.appendChild(icon);
+  item.appendChild(span);
+  resultsContainer.appendChild(item);
+  resultsContainer.style.display = 'block';
+  updateWindowHeight(1);
+}
+
+// --- App Search ---
 
 async function searchApps(query) {
   try {
@@ -117,7 +266,6 @@ function renderResults(results) {
     return;
   }
 
-  // Build HTML
   resultsContainer.innerHTML = '';
   for (let i = 0; i < results.length; i++) {
     const app = results[i];
@@ -137,13 +285,11 @@ function renderResults(results) {
     item.appendChild(icon);
     item.appendChild(name);
 
-    // Click to launch
     item.addEventListener('click', () => {
       selectedIdx = i;
       launchSelectedApp();
     });
 
-    // Mouse hover updates selection
     item.addEventListener('mouseenter', () => {
       selectedIdx = i;
       updateSelection();
@@ -151,7 +297,6 @@ function renderResults(results) {
 
     resultsContainer.appendChild(item);
 
-    // Lazy-load icon (pass .app bundle path)
     if (app.path) {
       quickBarAPI.getAppIcon(app.path).then(dataURL => {
         if (dataURL) icon.src = dataURL;
@@ -191,6 +336,9 @@ function clearResults() {
   appResults = [];
   selectedIdx = -1;
   isAppSearchMode = false;
+  currentMode = 'apps';
+  calcResult = null;
+  fxResult = null;
   resultsContainer.innerHTML = '';
   resultsContainer.style.display = 'none';
   updateWindowHeight(0);
@@ -199,6 +347,19 @@ function clearResults() {
 function updateWindowHeight(resultCount) {
   const height = BASE_WINDOW_HEIGHT + (resultCount * RESULT_HEIGHT);
   quickBarAPI.resizeWindow(height);
+}
+
+// --- Clipboard ---
+
+function copyToClipboard(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
 }
 
 // --- IPC Listeners ---

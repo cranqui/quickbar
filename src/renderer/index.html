@@ -138,6 +138,13 @@
       text-overflow: ellipsis;
     }
 
+    .inline-result-icon {
+      font-size: 18px;
+      width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
     /* Dark mode */
     @media (prefers-color-scheme: dark) {
       .backdrop {
@@ -183,7 +190,7 @@
         <input
           type="text"
           id="quick-input"
-          placeholder="Type to search apps, /ai <command>, or /do <task>…"
+          placeholder="Search apps, calc, 3600 cop to usd, /ai, /do…"
           spellcheck="false"
           autocomplete="off"
           autofocus
@@ -192,7 +199,7 @@
     </div>
     <div class="results" id="results" style="display:none"></div>
     <div class="statusbar">
-      <span class="statusbar-hint"><kbd>↵</kbd> open</span>
+      <span class="statusbar-hint"><kbd>↵</kbd> open / copy</span>
       <span class="statusbar-hint"><kbd>/ai</kbd> command</span>
       <span class="statusbar-hint"><kbd>/do</kbd> task</span>
       <span class="statusbar-hint"><kbd>esc</kbd> dismiss</span>
