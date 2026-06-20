@@ -151,19 +151,11 @@ function renderResults(results) {
 
     resultsContainer.appendChild(item);
 
-    // Lazy-load icon (pass .app bundle path, not .icns path)
+    // Lazy-load icon (pass .app bundle path)
     if (app.path) {
       quickBarAPI.getAppIcon(app.path).then(dataURL => {
-        if (dataURL) {
-          icon.src = dataURL;
-        } else {
-          console.warn('[QuickBar] No dataURL for', app.name, 'path:', app.path);
-        }
-      }).catch(err => {
-        console.error('[QuickBar] Icon IPC error for', app.name, err);
+        if (dataURL) icon.src = dataURL;
       });
-    } else {
-      console.warn('[QuickBar] No path for', app.name);
     }
   }
 
