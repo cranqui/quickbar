@@ -99,6 +99,45 @@
       font-size: 13px;
     }
 
+    /* Results list */
+    .results {
+      max-height: 352px; /* 8 items × 44px */
+      overflow-y: auto;
+      background: #ffffff;
+    }
+
+    .result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      height: 44px;
+      cursor: pointer;
+      transition: background 0.08s ease;
+    }
+
+    .result-item.selected {
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .result-icon {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      border-radius: 5px;
+      object-fit: contain;
+    }
+
+    .result-name {
+      font-size: 15px;
+      font-weight: 400;
+      color: #3a3a3a;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* Dark mode */
     @media (prefers-color-scheme: dark) {
       .backdrop {
@@ -124,6 +163,15 @@
       .statusbar-hint kbd {
         background: rgba(255, 255, 255, 0.1);
       }
+      .results {
+        background: #1e1e1e;
+      }
+      .result-item.selected {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .result-name {
+        color: #e0e0e0;
+      }
     }
   </style>
 </head>
@@ -135,15 +183,16 @@
         <input
           type="text"
           id="quick-input"
-          placeholder="Note, /ai <command>, or /do <task>…"
+          placeholder="Type to search apps, /ai <command>, or /do <task>…"
           spellcheck="false"
           autocomplete="off"
           autofocus
         />
       </div>
     </div>
+    <div class="results" id="results" style="display:none"></div>
     <div class="statusbar">
-      <span class="statusbar-hint"><kbd>↵</kbd> save note</span>
+      <span class="statusbar-hint"><kbd>↵</kbd> open</span>
       <span class="statusbar-hint"><kbd>/ai</kbd> command</span>
       <span class="statusbar-hint"><kbd>/do</kbd> task</span>
       <span class="statusbar-hint"><kbd>esc</kbd> dismiss</span>

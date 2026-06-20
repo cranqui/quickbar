@@ -4,6 +4,9 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const { loadConfig, ensureNotesDir, NOTES_DIR, readHermesEnvTelegram } = require('./config');
+const { getCachedApps, startAppWatchers } = require('./app-cache');
+const { getIconDataURL } = require('./app-icon-loader');
+const fuzzysort = require('fuzzysort');
 const os = require('os');
 
 let mainWindow = null;
@@ -251,6 +254,56 @@ ipcMain.handle('add-to-doer', async (event, text) => {
   return addToDoerInbox(text);
 });
 
+// --- App Launcher IPC ---
+
+ipcMain.handle('search-apps', async (event, query) => {
+  const apps = await getCachedApps();
+
+  if (!query || query.length < 1) {
+    // Return first 8 apps alphabetically when no query
+    return apps.slice(0, 8).map(app => ({
+      name: app.name,
+      path: app.path,
+      bundleId: app.bundleId,
+      iconPath: app.iconPath,
+    }));
+  }
+
+  const results = fuzzysort.go(query, apps, {
+    keys: ['name'],
+    threshold: -10000,
+    limit: 8,
+  });
+
+  return results.map(r => ({
+    name: r.obj.name,
+    path: r.obj.path,
+    bundleId: r.obj.bundleId,
+    iconPath: r.obj.iconPath,
+  }));
+});
+
+ipcMain.handle('get-app-icon', async (event, iconPath) => {
+  if (!iconPath) return null;
+  return getIconDataURL(iconPath);
+});
+
+ipcMain.handle('launch-app', async (event, appPath) => {
+  try {
+    await shell.openPath(appPath);
+    return { ok: true };
+  } catch (err) {
+    console.error('[QuickBar] Launch failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('resize-window', async (event, height) => {
+  if (!mainWindow) return;
+  const { width } = mainWindow.getBounds();
+  mainWindow.setBounds({ width, height: Math.round(height) });
+});
+
 ipcMain.handle('dispatch-command', async (event, text) => {
   // Save command to notes (audit trail)
   saveToNotes(text);
@@ -334,6 +387,14 @@ app.whenReady().then(() => {
   ensureNotesDir();
   createWindow();
   createTray();
+  startAppWatchers();
+
+  // Pre-warm app cache in background on launch
+  getCachedApps().then(apps => {
+    console.log(`[QuickBar] App cache ready: ${apps.length} apps`);
+  }).catch(e => {
+    console.error('[QuickBar] App cache init failed:', e.message);
+  });
 
   const registered = globalShortcut.register(config.hotkey, () => {
     if (mainWindow && mainWindow.isVisible()) {

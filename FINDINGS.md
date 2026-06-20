@@ -76,17 +76,18 @@ After fixes, both core flows confirmed working:
 
 ---
 
-## 5. Remaining Items from Code Audit
+## 5. Code Audit Items — All Resolved
 
-These were identified in the earlier security/correctness audit and not yet addressed:
+All issues from the earlier security/correctness audit are now addressed:
 
-| # | Severity | File | Issue |
-|---|---|---|---|
-| 1 | Medium | `src/main/main.js` | No Content-Security-Policy header in `index.html` |
-| 2 | Low | `src/main/config.js:40` | `~/.quickbar` directory created without explicit `chmod 700` (only the file gets 600) |
-| 3 | Low | `src/renderer/preload.js:7` | `ipcRenderer.on` listeners registered inside exported functions — accumulate on renderer reload |
-| 4 | Low | `src/renderer/index.html:8` | Google Fonts loaded over the network on every open (privacy + offline fragility) |
-| 5 | Low | `package.json` | `ws` WebSocket library in devDependencies — never imported, dead dependency |
+| # | Severity | File | Issue | Status | Fix Commit |
+|---|----------|------|-------|--------|-------------|
+| 1 | Medium | `index.html` | No Content-Security-Policy header | ✅ Fixed | `7b8ab79` — CSP meta tag added |
+| 2 | Low | `config.js` | `~/.quickbar` dir without chmod 700 | ✅ Fixed | `7b8ab79` — `chmodSync(CONFIG_DIR, 0o700)` in `ensureDirs()` |
+| 3 | Low | `preload.js` | IPC listener accumulation | ✅ Fixed | `01eca6f` — `removeAllListeners` before `on` |
+| 4 | Low | `index.html` | Google Fonts loaded over network | ✅ Fixed | Already removed — no external font links in codebase |
+| 5 | Low | `package.json` | `ws` dead dependency | ✅ Fixed | Already removed — not in package.json |
+| 6 | Low | `index.html` | No dark mode support | ✅ Fixed | `bd2cebc` — `@media (prefers-color-scheme: dark)` block added |
 
 ---
 
