@@ -58,6 +58,22 @@ function parseCurrency(text) {
   return { amount: m[1].replace(/,/g, ''), from: m[2], to: m[3] };
 }
 
+// Quick crypto/fiat lookup: "btc", "0.5 btc", "2 eth"
+const QUICK_CRYPTO_CODES = ['btc','eth','sol','usdt','usdc','bnb','xrp','ada','doge','dot','matic','avax','link','ltc','bch','uni','atom','xlm','icp','fil','cop','usd','eur','gbp','jpy','cad','aud','chf','cny','mxn','brl','ars','clp','pen'];
+function parseQuickCurrency(text) {
+  // Just a currency code: "btc" → 1 BTC to USD
+  const codeOnly = text.match(/^([a-zA-Z]{3})$/i);
+  if (codeOnly && QUICK_CRYPTO_CODES.includes(codeOnly[1].toLowerCase())) {
+    return { amount: '1', from: codeOnly[1], to: 'usd' };
+  }
+  // Amount + code: "0.5 btc" → 0.5 BTC to USD
+  const amountCode = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})$/i);
+  if (amountCode && QUICK_CRYPTO_CODES.includes(amountCode[2].toLowerCase())) {
+    return { amount: amountCode[1].replace(/,/g, ''), from: amountCode[2], to: 'usd' };
+  }
+  return null;
+}
+
 // Unit conversion: "10 km in miles", "72 f to c", "1 tb to gb"
 function isUnitConversion(text) {
   return /^[\d.,]+\s+[a-zA-Z/]+\s+(to|in|as)\s+[a-zA-Z/]+$/i.test(text);
@@ -178,6 +194,14 @@ function routeInput(text) {
   // Kill process mode: typing filters process list (from two-step flow)
   if (killProcessMode) {
     showProcessList(text);
+    return;
+  }
+
+  // 0. Quick currency: "btc", "0.5 btc", "2 eth" → value in USD
+  const quick = parseQuickCurrency(text);
+  if (quick) {
+    currentMode = 'currency';
+    doCurrencyConversion(quick);
     return;
   }
 
