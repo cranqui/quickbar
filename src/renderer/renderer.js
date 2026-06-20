@@ -8,7 +8,7 @@ let currentMode = 'apps'; // 'apps', 'calc', 'currency', 'commands'
 let calcResult = null;
 let fxResult = null;
 
-const BASE_WINDOW_HEIGHT = 104; // input + statusbar
+const BASE_WINDOW_HEIGHT = 84; // fixed input (52) + statusbar (32) + 12px margin
 const RESULT_HEIGHT = 44; // per result item
 
 // --- Built-in Commands (fuzzy searchable, with icons) ---
@@ -53,6 +53,23 @@ function parseCurrency(text) {
   const m = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
   if (!m) return null;
   return { amount: m[1].replace(/,/g, ''), from: m[2], to: m[3] };
+}
+
+// Unit conversion: "10 km in miles", "72 f to c", "1 tb to gb"
+function isUnitConversion(text) {
+  return /^[\d.,]+\s+[a-zA-Z/]+\s+(to|in|as)\s+[a-zA-Z/]+$/i.test(text);
+}
+
+// Distinguish unit from currency: currencies are 3-letter codes (cop, usd, eur)
+// units include non-3-letter codes (km, lb, f, gb, etc.) or units in same category
+function isCurrencyConversion(text) {
+  const m = text.match(/^([\d.,]+)\s+([a-zA-Z]{3})\s+to\s+([a-zA-Z]{3})$/i);
+  if (!m) return false;
+  // If both are known unit codes and not standard currency, treat as unit
+  const knownCurrencies = ['cop','usd','eur','gbp','jpy','cad','aud','chf','cny','mxn','brl','ars','clp','pen'];
+  const from = m[2].toLowerCase();
+  const to = m[3].toLowerCase();
+  return knownCurrencies.includes(from) && knownCurrencies.includes(to);
 }
 
 // --- Input Handling ---
@@ -147,22 +164,31 @@ input.addEventListener('input', () => {
 });
 
 function routeInput(text) {
-  // 1. Currency conversion: "3600 cop to usd" (check before calc — has letters)
-  const fx = parseCurrency(text);
-  if (fx) {
-    currentMode = 'currency';
-    doCurrencyConversion(fx);
+  // 1. Currency conversion: "3600 cop to usd" (known currency codes only)
+  if (isCurrencyConversion(text)) {
+    const fx = parseCurrency(text);
+    if (fx) {
+      currentMode = 'currency';
+      doCurrencyConversion(fx);
+      return;
+    }
+  }
+
+  // 2. Unit conversion: "10 km in miles", "72 f to c", "1 tb to gb"
+  if (isUnitConversion(text)) {
+    currentMode = 'currency'; // reuse currency display mode
+    doUnitConversion(text);
     return;
   }
 
-  // 2. Calculator: math expression
+  // 3. Calculator: math expression
   if (isMathExpression(text)) {
     currentMode = 'calc';
     doCalc(text);
     return;
   }
 
-  // 3. App search + built-in commands (unified results)
+  // 4. App search + built-in commands (unified results)
   currentMode = 'apps';
   unifiedSearch(text);
 }
@@ -308,6 +334,21 @@ function formatCurrency(amount, currency) {
   return `${intPart}.${parts[1]} ${currency}`;
 }
 
+// --- Unit Conversion ---
+
+async function doUnitConversion(text) {
+  try {
+    const result = await quickBarAPI.convertUnit(text);
+    if (result && result.ok) {
+      renderInlineResult(result.label, 'unit');
+    } else {
+      clearResults();
+    }
+  } catch (e) {
+    clearResults();
+  }
+}
+
 // --- Inline Result (calculator / currency) ---
 
 function renderInlineResult(text, type) {
@@ -318,7 +359,7 @@ function renderInlineResult(text, type) {
   item.className = 'result-item selected';
   const icon = document.createElement('span');
   icon.className = 'inline-result-icon';
-  icon.textContent = type === 'currency' ? '💱' : type === 'error' ? '⚠' : '=';
+  icon.textContent = type === 'currency' ? '💱' : type === 'unit' ? '📏' : type === 'error' ? '⚠' : '=';
   const span = document.createElement('span');
   span.className = 'result-name';
   span.style.fontFamily = '"SF Mono", Menlo, monospace';
