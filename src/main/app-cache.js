@@ -115,4 +115,13 @@ function startAppWatchers() {
   }
 }
 
-module.exports = { getCachedApps, startAppWatchers };
+/**
+ * Synchronous access to cached apps (for use in non-async contexts like getRunningProcesses).
+ * Returns memory cache or disk cache, never triggers a scan.
+ */
+function getCachedAppsSync() {
+  if (appCache) return appCache;
+  return loadDiskCache() || [];
+}
+
+module.exports = { getCachedApps, startAppWatchers, getCachedAppsSync };

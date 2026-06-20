@@ -252,6 +252,24 @@ function renderUnifiedResults(results) {
       icon.className = 'result-icon-emoji';
       icon.textContent = item_data.icon;
       item.appendChild(icon);
+    } else if (item_data.type === 'process') {
+      if (item_data.appPath) {
+        // Use real app icon
+        const icon = document.createElement('img');
+        icon.className = 'result-icon';
+        icon.src = '';
+        icon.alt = item_data.name;
+        item.appendChild(icon);
+        quickBarAPI.getAppIcon(item_data.appPath).then(dataURL => {
+          if (dataURL) icon.src = dataURL;
+        });
+      } else {
+        // System process — use emoji
+        const icon = document.createElement('span');
+        icon.className = 'result-icon-emoji';
+        icon.textContent = '⚙';
+        item.appendChild(icon);
+      }
     } else {
       const icon = document.createElement('img');
       icon.className = 'result-icon';
@@ -388,7 +406,11 @@ async function doKillByName(name) {
         renderInlineResult(`Error: ${result.error}`, 'error');
       }
     } else {
-      // Multiple matches — show as selectable list
+      // Multiple matches — sort main apps first, then by memory
+      matches.sort((a, b) => {
+        if (a.isMainApp !== b.isMainApp) return a.isMainApp ? -1 : 1;
+        return b.memoryMB - a.memoryMB;
+      });
       killProcessMode = true;
       appResults = matches.map(p => ({
         ...p,

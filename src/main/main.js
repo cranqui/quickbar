@@ -591,28 +591,57 @@ loadLaunchStats();
 
 function getRunningProcesses() {
   const { execFileSync } = require('child_process');
-  // ps output: PID, %CPU, RSS, comm (app name)
   const output = execFileSync('ps', ['-eo', 'pid=,rss=,comm='], { encoding: 'utf8', timeout: 2000 });
+  
+  // Build a name→path lookup from cached apps for icon matching
+  let appLookup = {};
+  try {
+    const apps = require('./app-cache').getCachedAppsSync();
+    for (const app of apps) {
+      const baseName = app.name.toLowerCase();
+      appLookup[baseName] = app.path;
+    }
+  } catch {}
+
   const procs = [];
   for (const line of output.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    // Split: pid (digits), rss (digits), rest is comm
     const m = trimmed.match(/^(\d+)\s+(\d+)\s+(.+)$/);
     if (!m) continue;
     const pid = parseInt(m[1]);
     const rssKB = parseInt(m[2]);
     const comm = m[3].trim();
-    // Skip kernel processes (PID 0) and our own Electron processes
     if (pid === 0) continue;
     if (comm.includes('QuickBar') || comm.includes('Electron Helper')) continue;
-    // Show app name — take last path component
+    
     const name = comm.split('/').pop();
+    const nameLower = name.toLowerCase();
+    
+    // Check if this process matches an installed app (for icon)
+    let appPath = null;
+    let isMainApp = false;
+    
+    // Exact match: "Notion" process → Notion.app
+    if (appLookup[nameLower]) {
+      appPath = appLookup[nameLower];
+      isMainApp = true;
+    } else {
+      // Try matching base name: "Notion Helper" → "Notion"
+      const baseName = nameLower.replace(/\s+(helper|helper.*|renderer|gpu|crashpad|notification|plugin)/i, '').trim();
+      if (baseName && appLookup[baseName]) {
+        appPath = appLookup[baseName];
+      }
+    }
+    
     procs.push({
       pid,
       name,
       comm,
       memory: rssKB > 1024 ? `${(rssKB / 1024).toFixed(0)} MB` : `${rssKB} KB`,
+      memoryMB: Math.round(rssKB / 1024),
+      appPath,
+      isMainApp,
     });
   }
   return procs;
@@ -621,13 +650,12 @@ function getRunningProcesses() {
 ipcMain.handle('list-processes', async () => {
   try {
     const procs = getRunningProcesses();
-    // Sort by memory desc — most resource-hungry first
+    // Sort: main apps first, then by memory desc
     procs.sort((a, b) => {
-      const aMB = parseInt(a.memory);
-      const bMB = parseInt(b.memory);
-      return bMB - aMB;
+      if (a.isMainApp !== b.isMainApp) return a.isMainApp ? -1 : 1;
+      return b.memoryMB - a.memoryMB;
     });
-    return procs.slice(0, 30); // top 30
+    return procs.slice(0, 30);
   } catch (e) {
     return { error: e.message };
   }
